@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>Finn's Number Music Machine</title>
+  <style>
+    /* Big chunky touch-friendly UI for iPad. */
+    :root {
+      --bg: #0f1226;
+      --fg: #f5f7ff;
+      --accent: #ffd166;
+      --accent2: #06d6a0;
+      --muted: #6b7280;
+      --card: #1a1f3d;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0;
+      background: var(--bg); color: var(--fg);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+      -webkit-text-size-adjust: 100%;
+      touch-action: manipulation;
+    }
+    body { min-height: 100vh; padding: 16px; }
+    h1 {
+      font-size: 28px; margin: 0 0 4px 0;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
+    .subtitle { color: var(--muted); margin: 0 0 16px 0; font-size: 14px; }
+
+    .card {
+      background: var(--card);
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+
+    label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+
+    textarea {
+      width: 100%;
+      min-height: 80px;
+      font-size: 18px;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      padding: 10px;
+      border-radius: 10px;
+      border: 2px solid #2a2f55;
+      background: #0c0f24;
+      color: var(--fg);
+      resize: vertical;
+    }
+
+    .preset-row {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-top: 10px;
+    }
+    @media (min-width: 640px) {
+      .preset-row { grid-template-columns: repeat(4, 1fr); }
+    }
+
+    button {
+      font-size: 16px;
+      font-weight: 600;
+      padding: 14px 12px;
+      border-radius: 12px;
+      border: none;
+      background: #2a2f55;
+      color: var(--fg);
+      cursor: pointer;
+      transition: transform 0.05s ease;
+    }
+    button:active { transform: scale(0.97); }
+
+    .play {
+      width: 100%;
+      font-size: 24px;
+      padding: 22px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #0f1226;
+      margin-top: 8px;
+    }
+    .stop {
+      width: 100%;
+      font-size: 18px;
+      padding: 14px;
+      background: #ef476f;
+      color: white;
+      margin-top: 8px;
+    }
+
+    .row {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    select {
+      font-size: 16px;
+      padding: 10px;
+      border-radius: 10px;
+      background: #0c0f24;
+      color: var(--fg);
+      border: 2px solid #2a2f55;
+    }
+    input[type=range] { flex: 1; min-width: 150px; }
+    .tempo-value { font-variant-numeric: tabular-nums; min-width: 60px; }
+
+    .now-playing {
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 14px;
+      color: var(--accent);
+      min-height: 1.5em;
+      margin-top: 8px;
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+  <h1>Finn's Number Music Machine</h1>
+  <p class="subtitle">Numbers in. Music out.</p>
+
+  <div class="card">
+    <label for="sequence">Number sequence</label>
+    <textarea id="sequence" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">3 1 4 1 5 9 2 6 5 3 5 8 9 7 9 3 2 3 8 4 6 2 6 4 3 3 8 3 2 7 9 5 0 2 8 8 4 1 9 7 1 6 9 3 9 9 3 7 5 1</textarea>
+    <div class="preset-row">
+      <button data-preset="pi">π</button>
+      <button data-preset="fib">Fibonacci</button>
+      <button data-preset="primes">Primes</button>
+      <button data-preset="phone">Phone #</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <label for="scale">Scale (which notes are allowed)</label>
+    <select id="scale">
+      <option value="pentatonic" selected>C major pentatonic (always sounds happy)</option>
+      <option value="major">C major</option>
+      <option value="minor">C minor (a little sad)</option>
+      <option value="blues">Blues</option>
+      <option value="japanese">Japanese (hirajoshi)</option>
+      <option value="chromatic">Chromatic (every note)</option>
+    </select>
+
+    <label for="tempo" style="margin-top:14px;">Tempo: <span id="tempoValue" class="tempo-value">240</span> bpm</label>
+    <div class="row">
+      <input id="tempo" type="range" min="60" max="480" value="240" step="10" />
+    </div>
+
+    <label for="octaves" style="margin-top:14px;">Octave range: <span id="octavesValue" class="tempo-value">2</span></label>
+    <div class="row">
+      <input id="octaves" type="range" min="1" max="4" value="2" step="1" />
+    </div>
+  </div>
+
+  <button class="play" id="play">▶ Play</button>
+  <button class="stop" id="stop">■ Stop</button>
+  <div class="now-playing" id="nowPlaying"></div>
+
+  <!-- Tone.js via CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/tone@14.8.49/build/Tone.js"></script>
+  <script>
+    // ---- Number sequence presets -----------------------------------------
+    // Each preset returns a string of digits or numbers separated by spaces.
+    const PI_50 = "3 1 4 1 5 9 2 6 5 3 5 8 9 7 9 3 2 3 8 4 6 2 6 4 3 3 8 3 2 7 9 5 0 2 8 8 4 1 9 7 1 6 9 3 9 9 3 7 5 1";
+
+    function fibonacci(count) {
+      // Build the first `count` Fibonacci numbers, then collapse each one
+      // into a single digit by mod 10 — keeps notes in a reasonable range.
+      const out = [0, 1];
+      while (out.length < count) {
+        out.push(out[out.length - 1] + out[out.length - 2]);
+      }
+      return out.map(n => n % 10).join(" ");
+    }
+
+    function primes(count) {
+      const out = [];
+      let n = 2;
+      while (out.length < count) {
+        let isPrime = true;
+        for (let i = 2; i * i <= n; i++) {
+          if (n % i === 0) { isPrime = false; break; }
+        }
+        if (isPrime) out.push(n % 10);
+        n++;
+      }
+      return out.join(" ");
+    }
+
+    const PRESETS = {
+      pi: () => PI_50,
+      fib: () => fibonacci(40),
+      primes: () => primes(40),
+      phone: () => "5 0 3 5 5 5 1 2 3 4",
+    };
+
+    // ---- Scales ----------------------------------------------------------
+    // Each scale is a list of semitone offsets from the root note.
+    // We map digits 0-9 onto these offsets, wrapping around with modulo
+    // and bumping up an octave each time we wrap.
+    const SCALES = {
+      pentatonic: [0, 2, 4, 7, 9],          // C D E G A
+      major:      [0, 2, 4, 5, 7, 9, 11],   // C D E F G A B
+      minor:      [0, 2, 3, 5, 7, 8, 10],   // C D Eb F G Ab Bb
+      blues:      [0, 3, 5, 6, 7, 10],      // C Eb F F# G Bb
+      japanese:   [0, 2, 3, 7, 8],          // hirajoshi
+      chromatic:  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+    };
+
+    const ROOT_MIDI = 60; // middle C
+
+    // Given a number n, the chosen scale, and an octave-range cap, return
+    // a MIDI note. n wraps inside the scale and climbs octaves as it grows.
+    function numberToMidi(n, scale, octaveRange) {
+      const safe = Math.abs(Math.floor(Number(n))) || 0;
+      const octave = Math.floor(safe / scale.length) % octaveRange;
+      const degree = safe % scale.length;
+      return ROOT_MIDI + scale[degree] + 12 * octave;
+    }
+
+    function midiToNoteName(midi) {
+      const names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+      return names[midi % 12] + Math.floor(midi / 12 - 1);
+    }
+
+    // ---- Audio engine ----------------------------------------------------
+    let synth = null;
+    let scheduledIds = [];
+    let playing = false;
+
+    function ensureSynth() {
+      if (!synth) {
+        synth = new Tone.PolySynth(Tone.Synth, {
+          oscillator: { type: "triangle" },
+          envelope: { attack: 0.01, decay: 0.1, sustain: 0.3, release: 0.4 },
+        }).toDestination();
+        synth.volume.value = -6;
+      }
+    }
+
+    function parseSequence(text) {
+      return text
+        .split(/[\s,]+/)
+        .map(s => s.trim())
+        .filter(s => s.length > 0)
+        .map(s => Number(s))
+        .filter(n => Number.isFinite(n));
+    }
+
+    async function play() {
+      if (playing) stop();
+      await Tone.start(); // iPad requires a user-gesture-driven resume.
+      ensureSynth();
+
+      const text = document.getElementById("sequence").value;
+      const numbers = parseSequence(text);
+      if (numbers.length === 0) return;
+
+      const scaleName = document.getElementById("scale").value;
+      const scale = SCALES[scaleName];
+      const tempo = Number(document.getElementById("tempo").value);
+      const octaveRange = Number(document.getElementById("octaves").value);
+
+      Tone.Transport.bpm.value = tempo;
+      const stepSeconds = 60 / tempo / 2; // each number = an 8th note
+
+      const startTime = Tone.now() + 0.05;
+      scheduledIds = [];
+
+      const nowPlaying = document.getElementById("nowPlaying");
+      nowPlaying.textContent = "";
+
+      numbers.forEach((n, i) => {
+        const midi = numberToMidi(n, scale, octaveRange);
+        const noteName = midiToNoteName(midi);
+        synth.triggerAttackRelease(
+          Tone.Frequency(midi, "midi"),
+          stepSeconds * 0.9,
+          startTime + i * stepSeconds
+        );
+        const id = Tone.Transport.scheduleOnce(() => {
+          nowPlaying.textContent = `${n} → ${noteName}`;
+        }, startTime + i * stepSeconds);
+        scheduledIds.push(id);
+      });
+
+      const totalSeconds = numbers.length * stepSeconds + 0.2;
+      Tone.Transport.start();
+      playing = true;
+      setTimeout(() => {
+        if (playing) stop();
+      }, totalSeconds * 1000);
+    }
+
+    function stop() {
+      if (synth) synth.releaseAll();
+      scheduledIds.forEach(id => Tone.Transport.clear(id));
+      scheduledIds = [];
+      Tone.Transport.stop();
+      Tone.Transport.cancel();
+      playing = false;
+      document.getElementById("nowPlaying").textContent = "";
+    }
+
+    // ---- Wire up the UI --------------------------------------------------
+    document.getElementById("play").addEventListener("click", play);
+    document.getElementById("stop").addEventListener("click", stop);
+
+    document.querySelectorAll("[data-preset]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const preset = btn.dataset.preset;
+        document.getElementById("sequence").value = PRESETS[preset]();
+      });
+    });
+
+    const tempoSlider = document.getElementById("tempo");
+    const tempoValue = document.getElementById("tempoValue");
+    tempoSlider.addEventListener("input", () => tempoValue.textContent = tempoSlider.value);
+
+    const octavesSlider = document.getElementById("octaves");
+    const octavesValue = document.getElementById("octavesValue");
+    octavesSlider.addEventListener("input", () => octavesValue.textContent = octavesSlider.value);
+  </script>
+</body>
+</html>
