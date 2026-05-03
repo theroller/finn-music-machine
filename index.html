@@ -40,24 +40,77 @@
 
     label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
 
-    textarea {
-      width: 100%;
-      min-height: 80px;
-      font-size: 18px;
-      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    /* Sequence display — read-only chip strip showing what Finn has tapped in. */
+    .seq-display {
+      min-height: 60px;
+      max-height: 140px;
+      overflow-y: auto;
       padding: 10px;
       border-radius: 10px;
       border: 2px solid #2a2f55;
       background: #0c0f24;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-content: flex-start;
+    }
+    .seq-display:empty::before {
+      content: "Tap numbers below to build a song…";
+      color: var(--muted);
+      font-size: 14px;
+      align-self: center;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 32px;
+      height: 32px;
+      padding: 0 8px;
+      border-radius: 8px;
+      background: #2a2f55;
       color: var(--fg);
-      resize: vertical;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .chip.last {
+      background: var(--accent);
+      color: #0f1226;
+    }
+
+    /* The big number pad — 0-9 in a 3-column grid, with backspace and clear. */
+    .numpad {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .numpad button.digit {
+      font-size: 28px;
+      padding: 18px 0;
+      background: #2a2f55;
+      color: var(--accent);
+    }
+    .numpad button.zero { grid-column: span 1; }
+    .numpad button.back {
+      font-size: 22px;
+      padding: 18px 0;
+      background: #4a3050;
+      color: white;
+    }
+    .numpad button.clear {
+      font-size: 16px;
+      padding: 18px 0;
+      background: #6b1d3a;
+      color: white;
     }
 
     .preset-row {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
       gap: 8px;
-      margin-top: 10px;
+      margin-top: 12px;
     }
     @media (min-width: 640px) {
       .preset-row { grid-template-columns: repeat(4, 1fr); }
@@ -125,8 +178,24 @@
   <p class="subtitle">Numbers in. Music out.</p>
 
   <div class="card">
-    <label for="sequence">Number sequence</label>
-    <textarea id="sequence" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">3 1 4 1 5 9 2 6 5 3 5 8 9 7 9 3 2 3 8 4 6 2 6 4 3 3 8 3 2 7 9 5 0 2 8 8 4 1 9 7 1 6 9 3 9 9 3 7 5 1</textarea>
+    <label>Your song <span id="seqCount" style="float:right;color:var(--muted);">0 notes</span></label>
+    <div id="seqDisplay" class="seq-display"></div>
+
+    <div class="numpad">
+      <button class="digit" data-digit="1">1</button>
+      <button class="digit" data-digit="2">2</button>
+      <button class="digit" data-digit="3">3</button>
+      <button class="digit" data-digit="4">4</button>
+      <button class="digit" data-digit="5">5</button>
+      <button class="digit" data-digit="6">6</button>
+      <button class="digit" data-digit="7">7</button>
+      <button class="digit" data-digit="8">8</button>
+      <button class="digit" data-digit="9">9</button>
+      <button class="back" id="backBtn">← back</button>
+      <button class="digit zero" data-digit="0">0</button>
+      <button class="clear" id="clearBtn">clear</button>
+    </div>
+
     <div class="preset-row">
       <button data-preset="pi">π</button>
       <button data-preset="fib">Fibonacci</button>
@@ -155,6 +224,11 @@
     <div class="row">
       <input id="octaves" type="range" min="1" max="4" value="2" step="1" />
     </div>
+
+    <label class="mute-toggle" style="margin-top:14px; display:inline-flex; align-items:center; gap:8px; padding:10px 14px; border-radius:999px; background:#2a2f55; cursor:pointer; user-select:none;">
+      <input type="checkbox" id="loopToggle" />
+      <span>🔁 Loop forever</span>
+    </label>
   </div>
 
   <button class="play" id="play">▶ Play</button>
@@ -243,7 +317,11 @@
       }
     }
 
-    function parseSequence(text) {
+    // ---- Sequence state --------------------------------------------------
+    // Single source of truth: an array of digits Finn has tapped in.
+    let sequence = [];
+
+    function parseSequenceText(text) {
       return text
         .split(/[\s,]+/)
         .map(s => s.trim())
@@ -252,13 +330,41 @@
         .filter(n => Number.isFinite(n));
     }
 
+    function renderSequence() {
+      const display = document.getElementById("seqDisplay");
+      const count = document.getElementById("seqCount");
+      display.innerHTML = "";
+      sequence.forEach((n, i) => {
+        const chip = document.createElement("span");
+        chip.className = "chip" + (i === sequence.length - 1 ? " last" : "");
+        chip.textContent = n;
+        display.appendChild(chip);
+      });
+      count.textContent = sequence.length === 1
+        ? "1 note"
+        : `${sequence.length} notes`;
+      // Auto-scroll the display so the latest chip stays in view.
+      display.scrollTop = display.scrollHeight;
+    }
+
+    // Preview a single number as a note — used when Finn taps a digit so
+    // he hears what he just added, immediately.
+    async function previewNumber(n) {
+      await Tone.start();
+      ensureSynth();
+      const scaleName = document.getElementById("scale").value;
+      const scale = SCALES[scaleName];
+      const octaveRange = Number(document.getElementById("octaves").value);
+      const midi = numberToMidi(n, scale, octaveRange);
+      synth.triggerAttackRelease(Tone.Frequency(midi, "midi"), 0.25);
+    }
+
     async function play() {
       if (playing) stop();
       await Tone.start(); // iPad requires a user-gesture-driven resume.
       ensureSynth();
 
-      const text = document.getElementById("sequence").value;
-      const numbers = parseSequence(text);
+      const numbers = sequence.slice();
       if (numbers.length === 0) return;
 
       const scaleName = document.getElementById("scale").value;
@@ -293,7 +399,13 @@
       Tone.Transport.start();
       playing = true;
       setTimeout(() => {
-        if (playing) stop();
+        if (!playing) return;
+        // If loop is on, restart the sequence; otherwise stop cleanly.
+        if (document.getElementById("loopToggle").checked) {
+          play();
+        } else {
+          stop();
+        }
       }, totalSeconds * 1000);
     }
 
@@ -311,12 +423,63 @@
     document.getElementById("play").addEventListener("click", play);
     document.getElementById("stop").addEventListener("click", stop);
 
+    // Number pad: each digit appends to the sequence and previews the note.
+    document.querySelectorAll(".numpad .digit").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const n = Number(btn.dataset.digit);
+        sequence.push(n);
+        renderSequence();
+        previewNumber(n);
+      });
+    });
+
+    document.getElementById("backBtn").addEventListener("click", () => {
+      sequence.pop();
+      renderSequence();
+    });
+
+    document.getElementById("clearBtn").addEventListener("click", () => {
+      sequence = [];
+      renderSequence();
+    });
+
+    // Presets fill the chip strip with a sequence of digits.
     document.querySelectorAll("[data-preset]").forEach(btn => {
       btn.addEventListener("click", () => {
         const preset = btn.dataset.preset;
-        document.getElementById("sequence").value = PRESETS[preset]();
+        sequence = parseSequenceText(PRESETS[preset]());
+        renderSequence();
       });
     });
+
+    // Keyboard input — type digits 0-9, Backspace to remove, Enter/Space to
+    // play, Escape to clear. Skip if focus is on a form control so that
+    // sliders and selects keep working normally.
+    document.addEventListener("keydown", (e) => {
+      const tag = (e.target.tagName || "").toLowerCase();
+      if (tag === "input" || tag === "select" || tag === "textarea") return;
+
+      if (/^[0-9]$/.test(e.key)) {
+        const n = Number(e.key);
+        sequence.push(n);
+        renderSequence();
+        previewNumber(n);
+        e.preventDefault();
+      } else if (e.key === "Backspace") {
+        sequence.pop();
+        renderSequence();
+        e.preventDefault();
+      } else if (e.key === "Escape" || e.key === "Delete") {
+        sequence = [];
+        renderSequence();
+        e.preventDefault();
+      } else if (e.key === " " || e.key === "Enter") {
+        play();
+        e.preventDefault();
+      }
+    });
+
+    renderSequence(); // Show the initial empty-state placeholder.
 
     const tempoSlider = document.getElementById("tempo");
     const tempoValue = document.getElementById("tempoValue");
